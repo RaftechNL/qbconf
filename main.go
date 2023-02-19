@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -15,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/eks"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/urfave/cli/v2"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/clientcmd/api"
 
@@ -37,10 +39,65 @@ const (
 )
 
 func main() {
-	TokenWithRoleFromArn("arn:aws:iam::123:role/AWSAdminRole", "eu-west-1", "test", "raftech-test")
+	app := cli.NewApp()
+	app.Authors = []*cli.Author{
+		{
+			Name:  "NinjaOps by raftech.io",
+			Email: "hello@raftech.nl",
+		},
+	}
+	app.Name = "qbconf"
+	app.Usage = "Minimalistic Kubernetes kubeconfig file generator using AWS STS and EKS credentials"
+
+	app.Commands = []*cli.Command{
+		{
+			Name:  "generate",
+			Usage: "Generate a kubeconfig file for an EKS cluster",
+			Flags: []cli.Flag{
+				&cli.StringFlag{
+					Name:     "role-arn",
+					Usage:    "ARN of the AWS IAM role to assume",
+					Value:    "",
+					Required: false,
+				},
+				&cli.StringFlag{
+					Name:     "region",
+					Usage:    "AWS region",
+					EnvVars:  []string{"AWS_REGION"},
+					Value:    "eu-west-1",
+					Required: true,
+				},
+				&cli.StringFlag{
+					Name:     "role-session-name",
+					Usage:    "Name of the AWS STS role session to create",
+					Value:    "qbconf-session",
+					Required: false,
+				},
+				&cli.StringFlag{
+					Name:     "eks-cluster-name",
+					Usage:    "Name of the EKS cluster to generate a kubeconfig file for",
+					Required: true,
+				},
+				&cli.StringFlag{
+					Name:     "output-file",
+					Usage:    "Name of the file to write the generated kubeconfig to",
+					Value:    "kubeconfig.yaml",
+					Required: false,
+				},
+			},
+			Action: func(c *cli.Context) error {
+				return TokenWithRoleFromArn(c.String("role-arn"), c.String("region"), c.String("role-session-name"), c.String("eks-cluster-name"), c.String("output-file"))
+			},
+		},
+	}
+
+	err := app.Run(os.Args)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
-func AssumeRole(roleArn, region, roleSessionName string) (*stscreds.AssumeRoleProvider, error) {
+func assumeRole(roleArn, region, roleSessionName string) (*stscreds.AssumeRoleProvider, error) {
 	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(region))
 	if err != nil {
 		return nil, fmt.Errorf("failed to load SDK config: %v", err)
@@ -57,9 +114,9 @@ func AssumeRole(roleArn, region, roleSessionName string) (*stscreds.AssumeRolePr
 	return roleProvider, nil
 }
 
-func TokenWithRoleFromArn(roleArn, region, roleSessionName, eksClusterName string) error {
+func TokenWithRoleFromArn(roleArn, region, roleSessionName, eksClusterName, output string) error {
 
-	provider, err := AssumeRole(roleArn, region, roleSessionName)
+	provider, err := assumeRole(roleArn, region, roleSessionName)
 	if err != nil {
 		fmt.Println("Failed to assume role:", err)
 		return err
