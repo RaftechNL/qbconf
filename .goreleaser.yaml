@@ -21,11 +21,8 @@ builds:
     binary: qbconf    
 
 archives:
-  - replacements:
-      darwin: Darwin
-      linux: Linux
-      windows: Windows
-      amd64: x86_64
+  - id: qbconf
+    name_template: '{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}'
 
 checksum:
   name_template: 'checksums.txt'
