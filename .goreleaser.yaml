@@ -8,8 +8,7 @@ builds:
     hooks:
       post:
         - upx --brute {{ .ArtifactPath }}
-    ldflags:
-      - -s -w s -w -X main.version={{.Version}}
+    ldflags: -s -w -X main.version={{.Version}}
     goos:
       - linux
       - windows
