@@ -1,9 +1,11 @@
 before:
   hooks:
     - go mod tidy
+
 builds:
   - env:
       - CGO_ENABLED=0
+    ldflags: -s -w      
     goos:
       - linux
       - windows
@@ -12,7 +14,8 @@ builds:
       - amd64
       - arm
       - arm64    
-    binary: qbconf           
+    binary: qbconf    
+
 archives:
   - replacements:
       darwin: Darwin
@@ -21,8 +24,10 @@ archives:
       amd64: x86_64
 checksum:
   name_template: 'checksums.txt'
+
 snapshot:
   name_template: "{{ incpatch .Version }}-next"
+
 changelog:
   sort: asc
   filters:
@@ -35,4 +40,4 @@ brews:
     homepage: "https://github.com/RaftechNL/qbconf"
     tap:
       owner: RaftechNL
-      name: homebrew-raftech
+      name: homebrew-toolbox
