@@ -5,7 +5,11 @@ before:
 builds:
   - env:
       - CGO_ENABLED=0
-    ldflags: -s -w      
+    hooks:
+      post:
+        - upx -9 {{ .ArtifactPath }}
+    ldflags:
+      - -s -w s -w -X main.version={{.Version}}
     goos:
       - linux
       - windows
@@ -22,6 +26,7 @@ archives:
       linux: Linux
       windows: Windows
       amd64: x86_64
+
 checksum:
   name_template: 'checksums.txt'
 
@@ -34,6 +39,7 @@ changelog:
     exclude:
       - '^docs:'
       - '^test:'
+
 brews:
   -
     name: qbconf
