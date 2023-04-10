@@ -7,7 +7,7 @@ builds:
       - CGO_ENABLED=0
     hooks:
       post:
-        - upx --brute '{{ .Env.PWD }}/dist/{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}/qbconf'
+        - upx --brute '{{ .Env.PWD }}/dist/{{ .Os }}_{{ .Arch }}_qbconf'
     ldflags: -s -w -X main.version={{.Version}}
     goos:
       - linux
@@ -16,18 +16,12 @@ builds:
     goarch:
       - amd64
       - arm64    
-    binary: qbconf    
-    targets:
-      - linux_amd64
-      - linux_arm64
-      - windows_amd64
-      - windows_arm64
-      - darwin_amd64
-      - darwin_arm64    
+    no_unique_dist_dir: true
+    binary: '{{ .Os }}_{{ .Arch }}_qbconf'
 
 archives:
   - id: qbconf
-    name_template: '{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}'
+    name_template: '{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}'
 
 checksum:
   name_template: 'checksums.txt'
