@@ -39,3 +39,5 @@ brews:
     tap:
       owner: RaftechNL
       name: homebrew-toolbox
+    install: |
+      bin.install "qbconf"
