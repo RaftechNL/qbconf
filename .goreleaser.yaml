@@ -40,4 +40,5 @@ brews:
       owner: RaftechNL
       name: homebrew-toolbox
     install: |
+      mv '{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}', 'qbconf'    
       bin.install "qbconf"
