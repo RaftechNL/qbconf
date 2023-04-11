@@ -5,9 +5,9 @@ before:
 builds:
   - env:
       - CGO_ENABLED=0
-    hooks:
-      post:
-        - upx --brute '{{ .Env.PWD }}/dist/{{ .Os }}_{{ .Arch }}_qbconf'
+    # hooks:
+    #   post:
+    #     - upx -1 '{{ .Env.PWD }}/dist/{{ .Os }}_{{ .Arch }}_qbconf'
     ldflags: -s -w -X main.version={{.Version}}
     goos:
       - linux
@@ -16,7 +16,7 @@ builds:
       - amd64
       - arm64    
     no_unique_dist_dir: true
-    binary: '{{ .Os }}_{{ .Arch }}_qbconf'
+    binary: '{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}'
 
 archives:
   - id: qbconf
