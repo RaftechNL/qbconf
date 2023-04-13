@@ -1,6 +1,6 @@
 # qbconf
 
-![Logo](https://img.raftech.nl/white_logo_color1_background.png)
+![Logo](https://img.raftech.nl/logo-qbconf.png)
 
 A minimalistic CLI to generate kubeconfig 
 
