@@ -191,6 +191,11 @@ func main() {
 				result, _ := getAWSIdentity(*awsConfig)
 				fmt.Println(*result.Arn)
 
+				errKubeConfig := generateKubeConfig(c.String("region"), c.String("eks-cluster-name"), c.String("output-file"))
+				if errKubeConfig != nil {
+					return errKubeConfig
+				}
+
 				return nil
 			},
 		},
