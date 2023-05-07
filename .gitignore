@@ -16,3 +16,4 @@
 qbconf
 .DS_Store
 /dist
+kubeconfig.yaml
