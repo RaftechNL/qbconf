@@ -1,3 +1,31 @@
+# v1.27.10 (2023-04-10)
+
+* No change notes available for this release.
+
+# v1.27.9 (2023-04-07)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.27.8 (2023-03-21)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.27.7 (2023-03-14)
+
+* No change notes available for this release.
+
+# v1.27.6 (2023-03-10)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.27.5 (2023-02-22)
+
+* **Bug Fix**: Prevent nil pointer dereference when retrieving error codes.
+
+# v1.27.4 (2023-02-20)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
 # v1.27.3 (2023-02-15)
 
 * **Announcement**: When receiving an error response in restJson-based services, an incorrect error type may have been returned based on the content of the response. This has been fixed via PR #2012 tracked in issue #1910.

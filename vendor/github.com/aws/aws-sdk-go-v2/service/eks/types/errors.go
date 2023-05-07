@@ -30,7 +30,7 @@ func (e *AccessDeniedException) ErrorMessage() string {
 	return *e.Message
 }
 func (e *AccessDeniedException) ErrorCode() string {
-	if e.ErrorCodeOverride == nil {
+	if e == nil || e.ErrorCodeOverride == nil {
 		return "AccessDeniedException"
 	}
 	return *e.ErrorCodeOverride
@@ -57,16 +57,16 @@ func (e *BadRequestException) ErrorMessage() string {
 	return *e.Message
 }
 func (e *BadRequestException) ErrorCode() string {
-	if e.ErrorCodeOverride == nil {
+	if e == nil || e.ErrorCodeOverride == nil {
 		return "BadRequestException"
 	}
 	return *e.ErrorCodeOverride
 }
 func (e *BadRequestException) ErrorFault() smithy.ErrorFault { return smithy.FaultClient }
 
-// These errors are usually caused by a client action. Actions can include using an
-// action or resource on behalf of a user that doesn't have permissions to use the
-// action or resource or specifying an identifier that is not valid.
+// These errors are usually caused by a client action. Actions can include using
+// an action or resource on behalf of a user that doesn't have permissions to use
+// the action or resource or specifying an identifier that is not valid.
 type ClientException struct {
 	Message *string
 
@@ -89,7 +89,7 @@ func (e *ClientException) ErrorMessage() string {
 	return *e.Message
 }
 func (e *ClientException) ErrorCode() string {
-	if e.ErrorCodeOverride == nil {
+	if e == nil || e.ErrorCodeOverride == nil {
 		return "ClientException"
 	}
 	return *e.ErrorCodeOverride
@@ -121,7 +121,7 @@ func (e *InvalidParameterException) ErrorMessage() string {
 	return *e.Message
 }
 func (e *InvalidParameterException) ErrorCode() string {
-	if e.ErrorCodeOverride == nil {
+	if e == nil || e.ErrorCodeOverride == nil {
 		return "InvalidParameterException"
 	}
 	return *e.ErrorCodeOverride
@@ -152,7 +152,7 @@ func (e *InvalidRequestException) ErrorMessage() string {
 	return *e.Message
 }
 func (e *InvalidRequestException) ErrorCode() string {
-	if e.ErrorCodeOverride == nil {
+	if e == nil || e.ErrorCodeOverride == nil {
 		return "InvalidRequestException"
 	}
 	return *e.ErrorCodeOverride
@@ -179,7 +179,7 @@ func (e *NotFoundException) ErrorMessage() string {
 	return *e.Message
 }
 func (e *NotFoundException) ErrorCode() string {
-	if e.ErrorCodeOverride == nil {
+	if e == nil || e.ErrorCodeOverride == nil {
 		return "NotFoundException"
 	}
 	return *e.ErrorCodeOverride
@@ -209,7 +209,7 @@ func (e *ResourceInUseException) ErrorMessage() string {
 	return *e.Message
 }
 func (e *ResourceInUseException) ErrorCode() string {
-	if e.ErrorCodeOverride == nil {
+	if e == nil || e.ErrorCodeOverride == nil {
 		return "ResourceInUseException"
 	}
 	return *e.ErrorCodeOverride
@@ -238,7 +238,7 @@ func (e *ResourceLimitExceededException) ErrorMessage() string {
 	return *e.Message
 }
 func (e *ResourceLimitExceededException) ErrorCode() string {
-	if e.ErrorCodeOverride == nil {
+	if e == nil || e.ErrorCodeOverride == nil {
 		return "ResourceLimitExceededException"
 	}
 	return *e.ErrorCodeOverride
@@ -246,8 +246,8 @@ func (e *ResourceLimitExceededException) ErrorCode() string {
 func (e *ResourceLimitExceededException) ErrorFault() smithy.ErrorFault { return smithy.FaultClient }
 
 // The specified resource could not be found. You can view your available clusters
-// with ListClusters. You can view your available managed node groups with
-// ListNodegroups. Amazon EKS clusters and node groups are Region-specific.
+// with ListClusters . You can view your available managed node groups with
+// ListNodegroups . Amazon EKS clusters and node groups are Region-specific.
 type ResourceNotFoundException struct {
 	Message *string
 
@@ -271,7 +271,7 @@ func (e *ResourceNotFoundException) ErrorMessage() string {
 	return *e.Message
 }
 func (e *ResourceNotFoundException) ErrorCode() string {
-	if e.ErrorCodeOverride == nil {
+	if e == nil || e.ErrorCodeOverride == nil {
 		return "ResourceNotFoundException"
 	}
 	return *e.ErrorCodeOverride
@@ -298,7 +298,7 @@ func (e *ResourcePropagationDelayException) ErrorMessage() string {
 	return *e.Message
 }
 func (e *ResourcePropagationDelayException) ErrorCode() string {
-	if e.ErrorCodeOverride == nil {
+	if e == nil || e.ErrorCodeOverride == nil {
 		return "ResourcePropagationDelayException"
 	}
 	return *e.ErrorCodeOverride
@@ -328,7 +328,7 @@ func (e *ServerException) ErrorMessage() string {
 	return *e.Message
 }
 func (e *ServerException) ErrorCode() string {
-	if e.ErrorCodeOverride == nil {
+	if e == nil || e.ErrorCodeOverride == nil {
 		return "ServerException"
 	}
 	return *e.ErrorCodeOverride
@@ -354,7 +354,7 @@ func (e *ServiceUnavailableException) ErrorMessage() string {
 	return *e.Message
 }
 func (e *ServiceUnavailableException) ErrorCode() string {
-	if e.ErrorCodeOverride == nil {
+	if e == nil || e.ErrorCodeOverride == nil {
 		return "ServiceUnavailableException"
 	}
 	return *e.ErrorCodeOverride
@@ -387,7 +387,7 @@ func (e *UnsupportedAvailabilityZoneException) ErrorMessage() string {
 	return *e.Message
 }
 func (e *UnsupportedAvailabilityZoneException) ErrorCode() string {
-	if e.ErrorCodeOverride == nil {
+	if e == nil || e.ErrorCodeOverride == nil {
 		return "UnsupportedAvailabilityZoneException"
 	}
 	return *e.ErrorCodeOverride
