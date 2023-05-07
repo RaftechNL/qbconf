@@ -15,12 +15,14 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/eks"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/aws-sdk-go/aws/awserr"
+
 	"github.com/urfave/cli/v2"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/clientcmd/api"
@@ -159,6 +161,10 @@ func main() {
 								"mode", qbconfOperationMode,
 							)
 
+							if !arn.IsARN(c.String("role-arn")) {
+								logSugar.Error("role-arn is not a valid ARN")
+							}
+
 							provider := assumeRoleByArn(c.String("role-arn"), c.String("role-session-name"), awsConfig)
 							awsConfig.Credentials = provider
 						}
@@ -169,6 +175,9 @@ func main() {
 								"mode", qbconfOperationMode,
 							)
 
+							if !arn.IsARN(c.String("role-arn")) {
+								logSugar.Error("role-arn is not a valid ARN")
+							}
 							OidcToken, OidcTokenErr := getOidcGithubActionsToken()
 							if OidcTokenErr != nil {
 								logSugar.Error(OidcTokenErr)
