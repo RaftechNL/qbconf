@@ -29,7 +29,6 @@ import (
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -48,37 +47,21 @@ const (
 )
 
 var (
-	awsConfig        *aws.Config
+	awsConfig    *aws.Config
+	awsConfigErr error
+
 	logger           *zap.Logger
 	logSugar         *zap.SugaredLogger
 	version, reqUuid string
+
+	qbconfKubeconfigEnvVarName = "QBCONF_KUBECONFIG"
 )
 
 func init() {
 
 	reqUuid = uuid.New().String()
 
-	cfg := zap.Config{
-		Encoding:         "json",
-		Level:            zap.NewAtomicLevelAt(zapcore.DebugLevel),
-		OutputPaths:      []string{"stderr"},
-		ErrorOutputPaths: []string{"stderr"},
-		EncoderConfig: zapcore.EncoderConfig{
-			MessageKey: "message",
-
-			LevelKey:    "level",
-			EncodeLevel: zapcore.CapitalLevelEncoder,
-
-			TimeKey:    "time",
-			EncodeTime: zapcore.ISO8601TimeEncoder,
-
-			CallerKey:    "caller",
-			EncodeCaller: zapcore.ShortCallerEncoder,
-		},
-	}
-	logger, _ := cfg.Build()
-
-	//logger, _ = zap.NewProduction(zap.Fields(zap.String("request_uuid", reqUuid)))
+	logger, _ = zap.NewProduction(zap.Fields(zap.String("request_uuid", reqUuid)))
 	defer logger.Sync() // flushes buffer, if any
 	logSugar = logger.Sugar()
 }
@@ -86,20 +69,6 @@ func init() {
 func main() {
 
 	app := cli.NewApp()
-
-	app.Before = func(c *cli.Context) error {
-		awsConfigErr := error(nil)
-
-		awsConfig, awsConfigErr = loadAWSConfig("eu-west-1")
-
-		if awsConfigErr != nil {
-			logSugar.Error(awsConfigErr)
-			return awsConfigErr
-		}
-
-		logSugar.Debug("loaded AWS config successfully")
-		return awsConfigErr
-	}
 
 	app.Version = version
 	app.Authors = []*cli.Author{
@@ -113,180 +82,123 @@ func main() {
 
 	app.Commands = []*cli.Command{
 		{
-			Name:  "generate-gha",
-			Usage: "Generate a kubeconfig file for an EKS cluster by assuming specified AWS IAM role using GHA OIDC",
-			Flags: []cli.Flag{
-				&cli.StringFlag{
-					Name:     "role-arn",
-					Usage:    "ARN of the AWS IAM role to assume",
-					EnvVars:  []string{"AWS_ROLE_ARN"},
-					Value:    "",
-					Required: false,
-				},
-				&cli.StringFlag{
-					Name:     "region",
-					Usage:    "AWS region",
-					EnvVars:  []string{"AWS_REGION"},
-					Value:    "eu-west-1",
-					Required: true,
-				},
-				&cli.StringFlag{
-					Name:     "role-session-name",
-					Usage:    "Name of the AWS STS role session to create",
-					EnvVars:  []string{"AWS_ROLE_SESSION_NAME"},
-					Value:    "qbconf-session",
-					Required: false,
-				},
-				&cli.StringFlag{
-					Name:     "eks-cluster-name",
-					Usage:    "Name of the EKS cluster to generate a kubeconfig file for",
-					Required: true,
-				},
-				&cli.StringFlag{
-					Name:     "output-file",
-					Usage:    "Name of the file to write the generated kubeconfig to",
-					Value:    "kubeconfig.yaml",
-					Required: false,
-				},
-			},
-			Action: func(c *cli.Context) error {
-
-				requiredEnvVars := []string{"ACTIONS_ID_TOKEN_REQUEST_URL", "ACTIONS_ID_TOKEN_REQUEST_TOKEN"}
-
-				// Check for missing environment variables and return an error if any are missing.
-				for _, envVar := range requiredEnvVars {
-					if _, exists := os.LookupEnv(envVar); !exists {
-						err := MissingEnvVarError{EnvVarName: envVar}
-						logSugar.Error(err)
-						os.Exit(1)
-					}
-				}
-
-				// Resty client
-				logSugar.Debug("creating new resty client")
-				client := resty.New()
-				logSugar.Info("successfully created new resty client")
-
-				// ACTIONS_ID_TOKEN_REQUEST_URL
-				logSugar.Info("retrieve env vars for requesting token value towards OIDC endpoint")
-				logSugar.Debug("retrieval of ACTIONS_ID_TOKEN_REQUEST_URL env variable")
-				tokenRequestURL := os.Getenv("ACTIONS_ID_TOKEN_REQUEST_URL")
-				logSugar.Infow("retrieved ACTIONS_ID_TOKEN_REQUEST_URL",
-					"oidc_token_request_url", tokenRequestURL,
-				)
-
-				//ACTIONS_ID_TOKEN_REQUEST_TOKEN
-				logSugar.Debug("retrieval of ACTIONS_ID_TOKEN_REQUEST_TOKEN env variable")
-				tokenRequestToken := os.Getenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
-				logSugar.Infow("retrieved ACTIONS_ID_TOKEN_REQUEST_TOKEN",
-					"oidc_token_request_token", maskString(tokenRequestToken),
-				)
-
-				logSugar.Debugw("prepared URL for requesting token value towards OIDC endpoint",
-					"oidc_token_request_url", "%s&audience=sts.amazonaws.com",
-				)
-				resp, err := client.R().
-					SetAuthToken(tokenRequestToken).
-					Get(fmt.Sprintf("%s&audience=sts.amazonaws.com", tokenRequestURL))
-
-				if err != nil {
-					logSugar.Error("failed to retrieve token value from OIDC endpoint", err)
-					return err
-				}
-
-				tokenValue := gjson.Get(resp.String(), "value").String()
-				logSugar.Info("retrieved token value from OIDC endpoint")
-
-				// loggerAction, _ := zap.NewProduction(zap.Fields(
-				// 	zap.String("request_uuid", reqUuid),
-				// 	zap.String("action", "generate-gha"),
-				// 	zap.String("role_arn", c.String("role-arn")),
-				// 	zap.String("role_arn", c.String("region")),
-				// 	zap.String("role_arn", c.String("eks-cluster-name")),
-
-				// ))
-
-				// loggerAction.err("creating resty client",
-				// 	// Structured context as loosely typed key-value pairs.
-				// 	"action", "generate-gha",
-				// 	"backoff", time.Second,
-				// )
-
-				logSugar.Infow("failed to fetch URL",
-					// Structured context as loosely typed key-value pairs.
-					"role_arn", c.String("role-arn"),
-					"role_session_name", c.String("role-session-name"),
-					"region", c.String("region"),
-				)
-
-				awsConfig.Credentials = assumeRoleWithWebIdentity(c.String("role-arn"), c.String("role-session-name"), c.String("region"), tokenValue)
-
-				result, _ := getAWSIdentity(*awsConfig)
-				fmt.Println(*result.Arn)
-
-				errKubeConfig := generateKubeConfig(c.String("region"), c.String("eks-cluster-name"), c.String("output-file"))
-				if errKubeConfig != nil {
-					return errKubeConfig
-				}
-
-				return err
-			},
-		},
-		{
 			Name:  "generate",
-			Usage: "Generate a kubeconfig file for an EKS cluster by assuming specified AWS IAM role",
-			Flags: []cli.Flag{
-				&cli.StringFlag{
-					Name:     "role-arn",
-					Usage:    "ARN of the AWS IAM role to assume",
-					EnvVars:  []string{"AWS_ROLE_ARN"},
-					Value:    "",
-					Required: false,
-				},
-				&cli.StringFlag{
-					Name:     "region",
-					Usage:    "AWS region",
-					EnvVars:  []string{"AWS_REGION"},
-					Value:    "eu-west-1",
-					Required: true,
-				},
-				&cli.StringFlag{
-					Name:     "role-session-name",
-					Usage:    "Name of the AWS STS role session to create",
-					EnvVars:  []string{"AWS_ROLE_SESSION_NAME"},
-					Value:    "qbconf-session",
-					Required: false,
-				},
-				&cli.StringFlag{
-					Name:     "eks-cluster-name",
-					Usage:    "Name of the EKS cluster to generate a kubeconfig file for",
-					Required: true,
-				},
-				&cli.StringFlag{
-					Name:     "output-file",
-					Usage:    "Name of the file to write the generated kubeconfig to",
-					Value:    "kubeconfig.yaml",
-					Required: false,
-				},
-				&cli.BoolFlag{
-					Name:  "with-assume-role",
-					Usage: "Enables assuming of IAM role",
-					Value: false,
+			Usage: "Generate a kubeconfig file for a kubernetes cluster",
+			Subcommands: []*cli.Command{
+				{
+					Name:  "aws",
+					Usage: "Generate a kubeconfig file for an EKS cluster",
+					Flags: []cli.Flag{
+						&cli.StringFlag{
+							Name:     "role-arn",
+							Usage:    "ARN of the AWS IAM role to assume",
+							EnvVars:  []string{"AWS_ROLE_ARN"},
+							Value:    "",
+							Required: false,
+						},
+						&cli.StringFlag{
+							Name:     "region",
+							Usage:    "AWS region",
+							EnvVars:  []string{"AWS_REGION"},
+							Value:    "eu-west-1",
+							Required: false,
+						},
+						&cli.StringFlag{
+							Name:     "role-session-name",
+							Usage:    "Name of the AWS STS role session to create",
+							EnvVars:  []string{"AWS_ROLE_SESSION_NAME"},
+							Value:    "qbconf-session",
+							Required: false,
+						},
+						&cli.StringFlag{
+							Name:     "cluster-name",
+							Usage:    "Name of the EKS cluster to generate a kubeconfig",
+							Required: true,
+						},
+						&cli.StringFlag{
+							Name:     "output-file",
+							Usage:    "Name of the file to write the generated kubeconfig to",
+							Value:    "kubeconfig.yaml",
+							Required: false,
+						},
+						&cli.BoolFlag{
+							Name:  "with-assume-role",
+							Usage: "Enables assuming of IAM role via STS",
+							Value: false,
+						},
+						&cli.BoolFlag{
+							Name:  "with-gha-oidc",
+							Usage: "Enables assuming of IAM role via OIDC",
+							Value: false,
+						},
+					},
+					Before: func(c *cli.Context) error {
+						awsConfigErr = error(nil)
+
+						awsConfig, awsConfigErr = loadAWSConfig(c.String("region"))
+
+						if awsConfigErr != nil {
+							logSugar.Error(awsConfigErr)
+							return awsConfigErr
+						}
+
+						logSugar.Debug("loaded default AWS config successfully")
+						return awsConfigErr
+					},
+					Action: func(c *cli.Context) error {
+
+						qbconfOperationMode := "generate::aws::with-default-credentials"
+						logSugar.Infow("set default operating mode",
+							"mode", qbconfOperationMode,
+						)
+
+						if c.Bool("with-assume-role") {
+							qbconfOperationMode = "generate::aws::with-assume-role"
+
+							logSugar.Infow("change operating mode",
+								"mode", qbconfOperationMode,
+							)
+
+							provider := assumeRoleByArn(c.String("role-arn"), c.String("role-session-name"), awsConfig)
+							awsConfig.Credentials = provider
+						}
+						if c.Bool("with-gha-oidc") {
+							qbconfOperationMode = "generate::aws::with-gha-oidc"
+
+							logSugar.Infow("change operating mode",
+								"mode", qbconfOperationMode,
+							)
+
+							OidcToken, OidcTokenErr := getOidcGithubActionsToken()
+							if OidcTokenErr != nil {
+								logSugar.Error(OidcTokenErr)
+								return OidcTokenErr
+							}
+
+							awsConfig.Credentials = assumeRoleWithWebIdentity(c.String("role-arn"), c.String("role-session-name"), *OidcToken, awsConfig)
+						}
+
+						_, getAWSIdentityErr := getAWSIdentity(*awsConfig)
+						if getAWSIdentityErr != nil {
+							logSugar.Error(getAWSIdentityErr)
+							return getAWSIdentityErr
+						}
+
+						kubeconfigByteArr, errKubeConfig := generateKubeconfigEKS(c.String("region"), c.String("cluster-name"))
+						if errKubeConfig != nil {
+							logSugar.Error(errKubeConfig)
+							return errKubeConfig
+						}
+
+						logSugar.Infow("writing kubeconfig to file", "file", c.String("output-file"))
+						writeToFile(c.String("output-file"), kubeconfigByteArr)
+
+						return nil
+					},
 				},
 			},
 			Action: func(c *cli.Context) error {
-
-				provider := assumeRoleByArn(c.String("role-arn"), c.String("role-session-name"), awsConfig)
-				awsConfig.Credentials = provider
-
-				result, _ := getAWSIdentity(*awsConfig)
-				fmt.Println(*result.Arn)
-
-				errKubeConfig := generateKubeConfig(c.String("region"), c.String("eks-cluster-name"), c.String("output-file"))
-				if errKubeConfig != nil {
-					return errKubeConfig
-				}
-
+				cli.ShowSubcommandHelp(c)
 				return nil
 			},
 		},
@@ -300,9 +212,12 @@ func main() {
 
 // Loads the default AWS configuration - accordingly to the SDK documentation of resolving credentials
 func loadAWSConfig(region string) (*aws.Config, error) {
+
+	logSugar.Info("Loading default AWS config...")
+
 	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(region))
 	if err != nil {
-		fmt.Errorf("failed to load SDK config: %v", err)
+		logSugar.Errorw("failed to load SDK config", err)
 		return nil, err
 	}
 
@@ -311,6 +226,9 @@ func loadAWSConfig(region string) (*aws.Config, error) {
 
 // Gets the current identity which we have from AWS
 func getAWSIdentity(cfg aws.Config) (*sts.GetCallerIdentityOutput, error) {
+
+	logSugar.Info("Getting AWS identity... (getAWSIdentity)")
+
 	svc := sts.NewFromConfig(cfg)
 
 	input := &sts.GetCallerIdentityInput{}
@@ -326,6 +244,12 @@ func getAWSIdentity(cfg aws.Config) (*sts.GetCallerIdentityOutput, error) {
 			return nil, fmt.Errorf("unexpected error: %s", err.Error())
 		}
 	}
+
+	logSugar.Infow("retrieved caller identity from AWS",
+		// Structured context as loosely typed key-value pairs.
+		"arn", *result.Arn,
+		"account", *result.Account,
+	)
 
 	return result, nil
 }
@@ -345,15 +269,10 @@ func assumeRoleByArn(roleArn, roleSessionName string, awsConfig *aws.Config) *st
 }
 
 // Function to assume role with OIDC ( token )
-func assumeRoleWithWebIdentity(roleArn, roleSessionName, region, token string) *aws.CredentialsCache {
-	// Set up AWS SDK config with your AWS region and profile name
-	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(region))
-	if err != nil {
-		panic(err)
-	}
+func assumeRoleWithWebIdentity(roleArn, roleSessionName, token string, awsConfig *aws.Config) *aws.CredentialsCache {
 
 	// Create an STS client using the default config
-	stsClient := sts.NewFromConfig(cfg)
+	stsClient := sts.NewFromConfig(*awsConfig)
 
 	// Set up the AssumeRoleWithWebIdentity input
 	input := &sts.AssumeRoleWithWebIdentityInput{
@@ -365,6 +284,7 @@ func assumeRoleWithWebIdentity(roleArn, roleSessionName, region, token string) *
 	// Call the AssumeRoleWithWebIdentity API to assume the IAM role
 	resp, err := stsClient.AssumeRoleWithWebIdentity(context.Background(), input)
 	if err != nil {
+		logSugar.Error(err)
 		panic(err)
 	}
 
@@ -388,15 +308,17 @@ func assumeRoleWithWebIdentity(roleArn, roleSessionName, region, token string) *
 	return credsProvider
 }
 
-// Function to generate a kubeconfig file for a given EKS cluster
-func generateKubeConfig(region, eksClusterName, outputPath string) error {
+// Function to generate a kubeconfig for a given EKS cluster
+func generateKubeconfigEKS(region, eksClusterName string) ([]byte, error) {
 
 	stsSvc := sts.NewFromConfig(*awsConfig)
 
+	logSugar.Info("generating NewPresignClient ...")
 	presignClient := sts.NewPresignClient(stsSvc, sts.WithPresignClientFromClientOptions(func(o *sts.Options) {
 		o.Credentials = awsConfig.Credentials
 	}))
 
+	logSugar.Info("calling PresignGetCallerIdentity ...")
 	getCallerIdentity, err := presignClient.PresignGetCallerIdentity(context.Background(), &sts.GetCallerIdentityInput{}, func(presignOptions *sts.PresignOptions) {
 		presignOptions.ClientOptions = append(presignOptions.ClientOptions, func(stsOptions *sts.Options) {
 			// Add clusterId Header
@@ -407,20 +329,24 @@ func generateKubeConfig(region, eksClusterName, outputPath string) error {
 	})
 
 	if err != nil {
-		log.Fatalln(err.Error())
+		return nil, err
 	}
 
+	logSugar.Info("cretaing new EKS client...")
 	eksSvc := eks.NewFromConfig(*awsConfig)
 
+	logSugar.Info("describing EKS cluster...")
 	res, err := eksSvc.DescribeCluster(context.TODO(), &eks.DescribeClusterInput{
 		Name: aws.String(eksClusterName),
 	})
 	if err != nil {
-		log.Fatalf("unable to load SDK config, %v", err)
+		return nil, err
 	}
 
+	logSugar.Info("decoding certificateAuthorityData...")
 	certificateAuthorityData, _ := base64.StdEncoding.DecodeString(*res.Cluster.CertificateAuthority.Data)
 
+	logSugar.Info("generating kubeconfig for the EKS cluster ...")
 	config := &api.Config{
 		Clusters: map[string]*api.Cluster{
 			*res.Cluster.Name: {
@@ -443,17 +369,13 @@ func generateKubeConfig(region, eksClusterName, outputPath string) error {
 		CurrentContext: *res.Cluster.Name,
 	}
 
+	logSugar.Info("output kubeconfig byte[]")
 	configBytes, err := clientcmd.Write(*config)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	err = ioutil.WriteFile(outputPath, configBytes, 0644)
-	if err != nil {
-		panic(err)
-	}
-
-	return nil
+	return configBytes, nil
 }
 
 func maskString(s string) string {
@@ -461,6 +383,16 @@ func maskString(s string) string {
 		return s
 	}
 	return s[:4] + strings.Repeat("*", len(s)-8) + s[len(s)-4:]
+}
+
+func writeToFile(outputPath string, configBytes []byte) error {
+
+	err := ioutil.WriteFile(outputPath, configBytes, 0644)
+	if err != nil {
+		panic(err)
+	}
+
+	return nil
 }
 
 // MissingEnvVarError is a custom error type for missing environment variables.
