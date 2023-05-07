@@ -7,9 +7,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"net/http"
-	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-resty/resty/v2"
@@ -27,6 +26,10 @@ import (
 	"k8s.io/client-go/tools/clientcmd/api"
 
 	smithyhttp "github.com/aws/smithy-go/transport/http"
+
+	"github.com/google/uuid"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -45,9 +48,40 @@ const (
 )
 
 var (
-	awsConfig *aws.Config
-	version   string
+	awsConfig        *aws.Config
+	logger           *zap.Logger
+	logSugar         *zap.SugaredLogger
+	version, reqUuid string
 )
+
+func init() {
+
+	reqUuid = uuid.New().String()
+
+	cfg := zap.Config{
+		Encoding:         "json",
+		Level:            zap.NewAtomicLevelAt(zapcore.DebugLevel),
+		OutputPaths:      []string{"stderr"},
+		ErrorOutputPaths: []string{"stderr"},
+		EncoderConfig: zapcore.EncoderConfig{
+			MessageKey: "message",
+
+			LevelKey:    "level",
+			EncodeLevel: zapcore.CapitalLevelEncoder,
+
+			TimeKey:    "time",
+			EncodeTime: zapcore.ISO8601TimeEncoder,
+
+			CallerKey:    "caller",
+			EncodeCaller: zapcore.ShortCallerEncoder,
+		},
+	}
+	logger, _ := cfg.Build()
+
+	//logger, _ = zap.NewProduction(zap.Fields(zap.String("request_uuid", reqUuid)))
+	defer logger.Sync() // flushes buffer, if any
+	logSugar = logger.Sugar()
+}
 
 func main() {
 
@@ -59,9 +93,11 @@ func main() {
 		awsConfig, awsConfigErr = loadAWSConfig("eu-west-1")
 
 		if awsConfigErr != nil {
+			logSugar.Error(awsConfigErr)
 			return awsConfigErr
 		}
 
+		logSugar.Debug("loaded AWS config successfully")
 		return awsConfigErr
 	}
 
@@ -115,24 +151,74 @@ func main() {
 			},
 			Action: func(c *cli.Context) error {
 
+				requiredEnvVars := []string{"ACTIONS_ID_TOKEN_REQUEST_URL", "ACTIONS_ID_TOKEN_REQUEST_TOKEN"}
+
+				// Check for missing environment variables and return an error if any are missing.
+				for _, envVar := range requiredEnvVars {
+					if _, exists := os.LookupEnv(envVar); !exists {
+						err := MissingEnvVarError{EnvVarName: envVar}
+						logSugar.Error(err)
+						os.Exit(1)
+					}
+				}
+
+				// Resty client
+				logSugar.Debug("creating new resty client")
 				client := resty.New()
+				logSugar.Info("successfully created new resty client")
 
-				// Retrieve the token and URL from the environment of GitHub Actions
+				// ACTIONS_ID_TOKEN_REQUEST_URL
+				logSugar.Info("retrieve env vars for requesting token value towards OIDC endpoint")
+				logSugar.Debug("retrieval of ACTIONS_ID_TOKEN_REQUEST_URL env variable")
 				tokenRequestURL := os.Getenv("ACTIONS_ID_TOKEN_REQUEST_URL")
-				tokenRequestToken := os.Getenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
+				logSugar.Infow("retrieved ACTIONS_ID_TOKEN_REQUEST_URL",
+					"oidc_token_request_url", tokenRequestURL,
+				)
 
+				//ACTIONS_ID_TOKEN_REQUEST_TOKEN
+				logSugar.Debug("retrieval of ACTIONS_ID_TOKEN_REQUEST_TOKEN env variable")
+				tokenRequestToken := os.Getenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
+				logSugar.Infow("retrieved ACTIONS_ID_TOKEN_REQUEST_TOKEN",
+					"oidc_token_request_token", maskString(tokenRequestToken),
+				)
+
+				logSugar.Debugw("prepared URL for requesting token value towards OIDC endpoint",
+					"oidc_token_request_url", "%s&audience=sts.amazonaws.com",
+				)
 				resp, err := client.R().
-					EnableTrace().
 					SetAuthToken(tokenRequestToken).
 					Get(fmt.Sprintf("%s&audience=sts.amazonaws.com", tokenRequestURL))
 
 				if err != nil {
+					logSugar.Error("failed to retrieve token value from OIDC endpoint", err)
 					return err
 				}
 
 				tokenValue := gjson.Get(resp.String(), "value").String()
+				logSugar.Info("retrieved token value from OIDC endpoint")
 
-				//return TokenWithRoleFromArn(, , , c.String("eks-cluster-name"), c.String("output-file"))
+				// loggerAction, _ := zap.NewProduction(zap.Fields(
+				// 	zap.String("request_uuid", reqUuid),
+				// 	zap.String("action", "generate-gha"),
+				// 	zap.String("role_arn", c.String("role-arn")),
+				// 	zap.String("role_arn", c.String("region")),
+				// 	zap.String("role_arn", c.String("eks-cluster-name")),
+
+				// ))
+
+				// loggerAction.err("creating resty client",
+				// 	// Structured context as loosely typed key-value pairs.
+				// 	"action", "generate-gha",
+				// 	"backoff", time.Second,
+				// )
+
+				logSugar.Infow("failed to fetch URL",
+					// Structured context as loosely typed key-value pairs.
+					"role_arn", c.String("role-arn"),
+					"role_session_name", c.String("role-session-name"),
+					"region", c.String("region"),
+				)
+
 				awsConfig.Credentials = assumeRoleWithWebIdentity(c.String("role-arn"), c.String("role-session-name"), c.String("region"), tokenValue)
 
 				result, _ := getAWSIdentity(*awsConfig)
@@ -182,6 +268,11 @@ func main() {
 					Value:    "kubeconfig.yaml",
 					Required: false,
 				},
+				&cli.BoolFlag{
+					Name:  "with-assume-role",
+					Usage: "Enables assuming of IAM role",
+					Value: false,
+				},
 			},
 			Action: func(c *cli.Context) error {
 
@@ -207,6 +298,7 @@ func main() {
 	}
 }
 
+// Loads the default AWS configuration - accordingly to the SDK documentation of resolving credentials
 func loadAWSConfig(region string) (*aws.Config, error) {
 	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(region))
 	if err != nil {
@@ -217,6 +309,7 @@ func loadAWSConfig(region string) (*aws.Config, error) {
 	return &cfg, nil
 }
 
+// Gets the current identity which we have from AWS
 func getAWSIdentity(cfg aws.Config) (*sts.GetCallerIdentityOutput, error) {
 	svc := sts.NewFromConfig(cfg)
 
@@ -237,6 +330,7 @@ func getAWSIdentity(cfg aws.Config) (*sts.GetCallerIdentityOutput, error) {
 	return result, nil
 }
 
+// Function to assume a role by ARN provided
 func assumeRoleByArn(roleArn, roleSessionName string, awsConfig *aws.Config) *stscreds.AssumeRoleProvider {
 
 	// Create an STS client using the default config
@@ -250,6 +344,7 @@ func assumeRoleByArn(roleArn, roleSessionName string, awsConfig *aws.Config) *st
 	return roleProvider
 }
 
+// Function to assume role with OIDC ( token )
 func assumeRoleWithWebIdentity(roleArn, roleSessionName, region, token string) *aws.CredentialsCache {
 	// Set up AWS SDK config with your AWS region and profile name
 	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(region))
@@ -259,12 +354,6 @@ func assumeRoleWithWebIdentity(roleArn, roleSessionName, region, token string) *
 
 	// Create an STS client using the default config
 	stsClient := sts.NewFromConfig(cfg)
-
-	// // Set up the IAM role ARN that you want to assume
-	// roleArn, err = arn.Parse(roleArn)
-	// if err != nil {
-	// 	panic(err)
-	// }
 
 	// Set up the AssumeRoleWithWebIdentity input
 	input := &sts.AssumeRoleWithWebIdentityInput{
@@ -299,6 +388,7 @@ func assumeRoleWithWebIdentity(roleArn, roleSessionName, region, token string) *
 	return credsProvider
 }
 
+// Function to generate a kubeconfig file for a given EKS cluster
 func generateKubeConfig(region, eksClusterName, outputPath string) error {
 
 	stsSvc := sts.NewFromConfig(*awsConfig)
@@ -319,26 +409,6 @@ func generateKubeConfig(region, eksClusterName, outputPath string) error {
 	if err != nil {
 		log.Fatalln(err.Error())
 	}
-
-	u2, _ := url.Parse(getCallerIdentity.URL)
-
-	req := &http.Request{
-		Method: getCallerIdentity.Method,
-		URL:    u2,
-		Header: getCallerIdentity.SignedHeader,
-	}
-
-	response, err := http.DefaultClient.Do(req)
-	if err != nil {
-		panic(err)
-	}
-
-	body, _ := ioutil.ReadAll(response.Body)
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Printf("%s\n", body)
 
 	eksSvc := eks.NewFromConfig(*awsConfig)
 
@@ -384,4 +454,83 @@ func generateKubeConfig(region, eksClusterName, outputPath string) error {
 	}
 
 	return nil
+}
+
+func maskString(s string) string {
+	if len(s) <= 8 {
+		return s
+	}
+	return s[:4] + strings.Repeat("*", len(s)-8) + s[len(s)-4:]
+}
+
+// MissingEnvVarError is a custom error type for missing environment variables.
+type MissingEnvVarError struct {
+	EnvVarName string
+}
+
+// Error implements the error interface for MissingEnvVarError.
+func (e MissingEnvVarError) Error() string {
+	return fmt.Sprintf("missing required environment variable: %s", e.EnvVarName)
+}
+
+func getOidcGithubActionsToken() (*string, error) {
+
+	// These environment variables are required for this action to run.
+	// They will be available only if the workflow calling the action/CLI will have
+	// write permissions to the id-token
+	requiredEnvVars := []string{"ACTIONS_ID_TOKEN_REQUEST_URL", "ACTIONS_ID_TOKEN_REQUEST_TOKEN"}
+
+	// Check for missing environment variables and return an error if any are missing.
+	for _, envVar := range requiredEnvVars {
+		if _, exists := os.LookupEnv(envVar); !exists {
+			err := MissingEnvVarError{EnvVarName: envVar}
+			logSugar.Error(err)
+			os.Exit(1)
+		}
+	}
+
+	logSugar.Debug("creating new resty client instance...")
+
+	client := resty.New()
+	client.
+		// Set retry count to non zero to enable retries
+		SetRetryCount(3).
+		// override initial retry wait time.
+		SetRetryWaitTime(2 * time.Second).
+		// MaxWaitTime can be overridden as well.
+		SetRetryMaxWaitTime(10 * time.Second)
+
+	logSugar.Info("created new resty client")
+
+	logSugar.Info("retrieve env vars for requesting token value towards OIDC endpoint")
+
+	// ACTIONS_ID_TOKEN_REQUEST_URL
+	logSugar.Debug("retrieval of ACTIONS_ID_TOKEN_REQUEST_URL env variable")
+	tokenRequestURL := os.Getenv("ACTIONS_ID_TOKEN_REQUEST_URL")
+	logSugar.Infow("retrieved ACTIONS_ID_TOKEN_REQUEST_URL",
+		"oidc_token_request_url", tokenRequestURL,
+	)
+
+	//ACTIONS_ID_TOKEN_REQUEST_TOKEN
+	logSugar.Debug("retrieval of ACTIONS_ID_TOKEN_REQUEST_TOKEN env variable")
+	tokenRequestToken := os.Getenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
+	logSugar.Infow("retrieved ACTIONS_ID_TOKEN_REQUEST_TOKEN",
+		"oidc_token_request_token", maskString(tokenRequestToken),
+	)
+
+	logSugar.Debugw("prepared URL for requesting token value towards OIDC endpoint",
+		"oidc_token_request_url", "%s&audience=sts.amazonaws.com",
+	)
+	resp, err := client.R().
+		SetAuthToken(tokenRequestToken).
+		Get(fmt.Sprintf("%s&audience=sts.amazonaws.com", tokenRequestURL))
+
+	if err != nil {
+		logSugar.Error("failed to retrieve token value from OIDC endpoint", err)
+		return nil, err
+	}
+
+	tokenValue := gjson.Get(resp.String(), "value").String()
+
+	return &tokenValue, nil
 }
