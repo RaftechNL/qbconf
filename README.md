@@ -42,49 +42,25 @@ brew install raftechnl/toolbox/qbconf
 
 ## Usage
 CLI supports the following actions
-* generate ( using assume role operations )
-* generate-gha ( using github actions OIDC )
-  
+* generate `<cloud>` - generates a kubeconfig file for a cluster in selected cloud provider
 
 ### generate
+Generate is our root working command. It supports cloud providers ( AWS at the moment ).
 
-Generating a kubeconfig file for a cluster in AWS using assume role operations requires the following information:
-* eks-cluster-name
-* role-arn
+#### AWS 
+```
+## generates kubeconfig for aws eks cluster by assuming given role ( uses provided credentials )
+qbconf generate aws --cluster-name XXX --region us-east-1 --with-assume-role --role-arn "arn:aws:iam::12334556:role/AWSMagicRole"
 
-```shell
-USAGE:
-   qbconf generate [command options] [arguments...]
+## generates kubeconfig for aws eks cluster by assuming given role ( uses oidc credentials )
+qbconf generate aws --cluster-name XXX --region us-east-1 --with-gha-oidc --role-arn "arn:aws:iam::12334556:role/AWSMagicRole"
 
-OPTIONS:
-   --role-arn value           ARN of the AWS IAM role to assume [$AWS_ROLE_ARN]
-   --region value             AWS region (default: "eu-west-1") [$AWS_REGION]
-   --role-session-name value  Name of the AWS STS role session to create (default: "qbconf-session") [$AWS_ROLE_SESSION_NAME]
-   --eks-cluster-name value   Name of the EKS cluster to generate a kubeconfig file for
-   --output-file value        Name of the file to write the generated kubeconfig to (default: "kubeconfig.yaml")
-   --help, -h                 show help
+## generates kubeconfig for aws eks cluster by using provided credentials
+qbconf generate aws --cluster-name XXX --region us-east-1 
 ```
 
-### generate-gha
-
-> This action is only available when qbconf is run from runner in hosted Github Actions
-
-Generating a kubeconfig file for a cluster in AWS using assume role with OIDC in Github Actions requires the following information:
-* eks-cluster-name
-* role-arn
-
-```shell
-USAGE:
-   qbconf generate-gha [command options] [arguments...]
-
-OPTIONS:
-   --role-arn value           ARN of the AWS IAM role to assume [$AWS_ROLE_ARN]
-   --region value             AWS region (default: "eu-west-1") [$AWS_REGION]
-   --role-session-name value  Name of the AWS STS role session to create (default: "qbconf-session") [$AWS_ROLE_SESSION_NAME]
-   --eks-cluster-name value   Name of the EKS cluster to generate a kubeconfig file for
-   --output-file value        Name of the file to write the generated kubeconfig to (default: "kubeconfig.yaml")
-   --help, -h                 show help
-```
+##### Output
+The CLI will by default output a kubeconfig file called `kubeconfig.yaml`. This can be changed by using the `--output-file` flag.
 
 ## Contributing
 
