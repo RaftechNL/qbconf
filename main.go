@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math"
 	"os"
 	"strings"
 	"time"
@@ -169,13 +170,34 @@ func main() {
 								"mode", qbconfOperationMode,
 							)
 
-							OidcToken, OidcTokenErr := getOidcGithubActionsToken()
-							if OidcTokenErr != nil {
-								logSugar.Error(OidcTokenErr)
-								return OidcTokenErr
+							// Add your own configuration here
+							maxRetries := 3
+							backoffBaseSeconds := 2
+
+							assumeRoleWithWebIdentityErr := retryWithExponentialBackoff(maxRetries, backoffBaseSeconds, func() error {
+								var err error
+
+								oidcToken, err := getOidcGithubActionsToken()
+								if err != nil {
+									return err
+								}
+
+								awsConfig.Credentials, err = assumeRoleWithWebIdentity(c.String("role-arn"), c.String("role-session-name"), *oidcToken, awsConfig)
+								return err
+							})
+
+							if assumeRoleWithWebIdentityErr != nil {
+								logSugar.Error(assumeRoleWithWebIdentityErr)
+								return assumeRoleWithWebIdentityErr
 							}
 
-							awsConfig.Credentials = assumeRoleWithWebIdentity(c.String("role-arn"), c.String("role-session-name"), *OidcToken, awsConfig)
+							// OidcToken, OidcTokenErr := getOidcGithubActionsToken()
+							// if OidcTokenErr != nil {
+							// 	logSugar.Error(OidcTokenErr)
+							// 	return OidcTokenErr
+							// }
+
+							// awsConfig.Credentials = assumeRoleWithWebIdentity(c.String("role-arn"), c.String("role-session-name"), *OidcToken, awsConfig)
 						}
 
 						_, getAWSIdentityErr := getAWSIdentity(*awsConfig)
@@ -269,7 +291,7 @@ func assumeRoleByArn(roleArn, roleSessionName string, awsConfig *aws.Config) *st
 }
 
 // Function to assume role with OIDC ( token )
-func assumeRoleWithWebIdentity(roleArn, roleSessionName, token string, awsConfig *aws.Config) *aws.CredentialsCache {
+func assumeRoleWithWebIdentity(roleArn, roleSessionName, token string, awsConfig *aws.Config) (*aws.CredentialsCache, error) {
 
 	// Create an STS client using the default config
 	stsClient := sts.NewFromConfig(*awsConfig)
@@ -284,8 +306,7 @@ func assumeRoleWithWebIdentity(roleArn, roleSessionName, token string, awsConfig
 	// Call the AssumeRoleWithWebIdentity API to assume the IAM role
 	resp, err := stsClient.AssumeRoleWithWebIdentity(context.Background(), input)
 	if err != nil {
-		logSugar.Error(err)
-		panic(err)
+		return nil, err
 	}
 
 	// value := aws.Credentials{
@@ -305,7 +326,7 @@ func assumeRoleWithWebIdentity(roleArn, roleSessionName, token string, awsConfig
 		),
 	)
 
-	return credsProvider
+	return credsProvider, nil
 }
 
 // Function to generate a kubeconfig for a given EKS cluster
@@ -446,9 +467,7 @@ func getOidcGithubActionsToken() (*string, error) {
 	//ACTIONS_ID_TOKEN_REQUEST_TOKEN
 	logSugar.Debug("retrieval of ACTIONS_ID_TOKEN_REQUEST_TOKEN env variable")
 	tokenRequestToken := os.Getenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
-	logSugar.Infow("retrieved ACTIONS_ID_TOKEN_REQUEST_TOKEN",
-		"oidc_token_request_token", maskString(tokenRequestToken),
-	)
+	logSugar.Info("retrieved ACTIONS_ID_TOKEN_REQUEST_TOKEN")
 
 	logSugar.Debugw("prepared URL for requesting token value towards OIDC endpoint",
 		"oidc_token_request_url", "%s&audience=sts.amazonaws.com",
@@ -465,4 +484,20 @@ func getOidcGithubActionsToken() (*string, error) {
 	tokenValue := gjson.Get(resp.String(), "value").String()
 
 	return &tokenValue, nil
+}
+
+func retryWithExponentialBackoff(maxRetries int, backoffBaseSeconds int, operation func() error) error {
+	var err error
+	for i := 0; i < maxRetries; i++ {
+		err = operation()
+		if err == nil {
+			return nil
+		}
+
+		waitTime := time.Duration(math.Pow(float64(backoffBaseSeconds), float64(i))) * time.Second
+		logSugar.Infow("retry wait added", "wait_time", waitTime, "attempt", i, "max_retries", maxRetries)
+		time.Sleep(waitTime)
+	}
+
+	return err
 }
