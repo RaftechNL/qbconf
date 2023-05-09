@@ -26,7 +26,7 @@ Its small footprint of 4MBs and single responsibility makes it ideal for use in 
     VERSION=$(curl --silent "https://api.github.com/repos/RaftechNL/qbconf/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
 
     # Set the URL of the tarball for the latest release
-    URL="https://github.com/RaftechNL/cli-yaml-merger/releases/download/${VERSION}/qbconf_${VERSION}_darwin_x86_64.tar.gz"
+    URL="https://github.com/RaftechNL/qbconf/releases/download/${VERSION}/qbconf_${VERSION}_darwin_x86_64.tar.gz"
 
     # Download and install the latest release
     curl -L ${URL} | tar xz
